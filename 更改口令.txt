@@ -1,0 +1,4 @@
+npm start
+git add .
+git commit -m "update works"
+git push
