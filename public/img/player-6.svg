@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" width="600" height="450" role="img" aria-label="示例作品图 06">
+  <defs>
+    <linearGradient id="g5" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a85f7b"/>
+      <stop offset="100%" stop-color="#6b2f45"/>
+    </linearGradient>
+    <radialGradient id="glow5" cx="0.78" cy="0.22" r="0.62">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="600" height="450" fill="url(#g5)"/>
+  <rect width="600" height="450" fill="url(#glow5)"/>
+  <circle cx="285" cy="205" r="0.7" fill="#fff" opacity="0.18"/><circle cx="382" cy="276" r="1.4" fill="#fff" opacity="0.26"/><circle cx="479" cy="27" r="2.0999999999999996" fill="#fff" opacity="0.33999999999999997"/><circle cx="576" cy="98" r="0.7" fill="#fff" opacity="0.42"/><circle cx="113" cy="169" r="1.4" fill="#fff" opacity="0.18"/><circle cx="210" cy="240" r="2.0999999999999996" fill="#fff" opacity="0.26"/><circle cx="307" cy="311" r="0.7" fill="#fff" opacity="0.33999999999999997"/><circle cx="404" cy="62" r="1.4" fill="#fff" opacity="0.42"/><circle cx="501" cy="133" r="2.0999999999999996" fill="#fff" opacity="0.18"/><circle cx="38" cy="204" r="0.7" fill="#fff" opacity="0.26"/><circle cx="135" cy="275" r="1.4" fill="#fff" opacity="0.33999999999999997"/><circle cx="232" cy="26" r="2.0999999999999996" fill="#fff" opacity="0.42"/><circle cx="329" cy="97" r="0.7" fill="#fff" opacity="0.18"/><circle cx="426" cy="168" r="1.4" fill="#fff" opacity="0.26"/><circle cx="523" cy="239" r="2.0999999999999996" fill="#fff" opacity="0.33999999999999997"/><circle cx="60" cy="310" r="0.7" fill="#fff" opacity="0.42"/><circle cx="157" cy="61" r="1.4" fill="#fff" opacity="0.18"/><circle cx="254" cy="132" r="2.0999999999999996" fill="#fff" opacity="0.26"/><circle cx="351" cy="203" r="0.7" fill="#fff" opacity="0.33999999999999997"/><circle cx="448" cy="274" r="1.4" fill="#fff" opacity="0.42"/><circle cx="545" cy="25" r="2.0999999999999996" fill="#fff" opacity="0.18"/><circle cx="82" cy="96" r="0.7" fill="#fff" opacity="0.26"/><circle cx="179" cy="167" r="1.4" fill="#fff" opacity="0.33999999999999997"/><circle cx="276" cy="238" r="2.0999999999999996" fill="#fff" opacity="0.42"/><circle cx="373" cy="309" r="0.7" fill="#fff" opacity="0.18"/><circle cx="470" cy="60" r="1.4" fill="#fff" opacity="0.26"/>
+  <g opacity="0.9">
+    <circle cx="470" cy="330" r="86" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="1.5"/>
+    <circle cx="470" cy="330" r="52" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <circle cx="470" cy="330" r="20" fill="#ffffff" fill-opacity="0.12"/>
+    <line x1="470" y1="330" x2="556" y2="244" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+  </g>
+  <text x="46" y="196" font-family="Georgia, 'Times New Roman', serif" font-size="150" font-weight="700"
+        fill="#ffffff" fill-opacity="0.94">06</text>
+  <text x="50" y="246" font-family="'PingFang SC','Microsoft YaHei',sans-serif" font-size="24"
+        fill="#ffffff" fill-opacity="0.88" letter-spacing="6">示例作品图</text>
+  <text x="50" y="282" font-family="'PingFang SC','Microsoft YaHei',sans-serif" font-size="15"
+        fill="#ffffff" fill-opacity="0.62">请替换 public/img/ 下的同名图片</text>
+  <rect x="0" y="404" width="600" height="46" fill="#331620" fill-opacity="0.55"/>
+  <text x="50" y="433" font-family="'PingFang SC','Microsoft YaHei',sans-serif" font-size="14"
+        fill="#ffffff" fill-opacity="0.72">武汉大学红色手工创作大赛 · 线上作品投票</text>
+</svg>

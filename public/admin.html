@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>投票后台 · 数据面板</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: { brand: { DEFAULT: '#1f3b73', light: '#2b4c8c', dark: '#16294f' } },
+        fontFamily: { sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'] },
+      },
+    },
+  };
+</script>
+<style>
+  body { background: #f4f5f7; }
+  .num { font-variant-numeric: tabular-nums; }
+  th { position: sticky; top: 0; background: #fff; z-index: 1; }
+</style>
+</head>
+<body class="min-h-screen font-sans text-slate-800">
+
+<header class="border-b border-slate-200 bg-white">
+  <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
+    <div>
+      <h1 class="text-lg font-semibold text-brand">投票后台 · 数据面板</h1>
+      <p id="sub" class="mt-0.5 text-[12.5px] text-slate-500">加载中…</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="refresh" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50">刷新</button>
+      <a href="/admin/export.csv" class="rounded-lg bg-brand px-3 py-1.5 text-[13px] font-medium text-white hover:bg-brand-light">导出票数 CSV</a>
+      <a href="/admin/export.csv?type=votes" class="rounded-lg border border-brand/30 bg-brand/5 px-3 py-1.5 text-[13px] font-medium text-brand hover:bg-brand/10">导出明细</a>
+      <a href="/admin/logout" class="rounded-lg px-2 py-1.5 text-[13px] text-slate-500 hover:text-slate-800">退出</a>
+    </div>
+  </div>
+</header>
+
+<main class="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-6 space-y-5">
+
+  <!-- 概览 -->
+  <section id="stats" class="grid grid-cols-2 gap-3 sm:grid-cols-4"></section>
+
+  <!-- 状态提示 -->
+  <div id="notice" class="rounded-xl border px-4 py-3 text-[13px]"></div>
+
+  <!-- 选手票数 -->
+  <section class="rounded-2xl border border-slate-200 bg-white">
+    <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+      <h2 class="text-[15px] font-semibold">选手票数</h2>
+      <span class="text-[12px] text-slate-400">按序号排序</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-[13.5px]">
+        <thead class="text-left text-[12px] uppercase tracking-wide text-slate-500 border-b border-slate-100">
+          <tr>
+            <th class="px-4 py-2.5 font-medium">序号</th>
+            <th class="px-4 py-2.5 font-medium">作品 / ID</th>
+            <th class="px-4 py-2.5 font-medium text-right">票数</th>
+            <th class="px-4 py-2.5 font-medium text-right">占比</th>
+            <th class="px-4 py-2.5 font-medium w-[38%]">分布</th>
+          </tr>
+        </thead>
+        <tbody id="playerRows" class="divide-y divide-slate-100"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 异常 IP -->
+  <section class="rounded-2xl border border-slate-200 bg-white">
+    <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+      <h2 class="text-[15px] font-semibold">同一 IP 多条记录（≥ 5 票）</h2>
+      <span class="text-[12px] text-slate-400">校园 NAT 下多条属正常，仅作人工核查线索</span>
+    </div>
+    <div id="suspects" class="px-4 py-3 text-[13px] text-slate-500">暂无</div>
+  </section>
+
+  <!-- 最近记录 -->
+  <section class="rounded-2xl border border-slate-200 bg-white">
+    <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+      <h2 class="text-[15px] font-semibold">最近 200 条投票记录</h2>
+      <span id="recentCount" class="text-[12px] text-slate-400"></span>
+    </div>
+    <div class="max-h-[520px] overflow-auto">
+      <table class="w-full text-[12.5px]">
+        <thead class="text-left text-[11.5px] uppercase tracking-wide text-slate-500 border-b border-slate-100">
+          <tr>
+            <th class="px-4 py-2.5 font-medium">#</th>
+            <th class="px-4 py-2.5 font-medium">时间（北京时间）</th>
+            <th class="px-4 py-2.5 font-medium">选手</th>
+            <th class="px-4 py-2.5 font-medium">身份</th>
+            <th class="px-4 py-2.5 font-medium">openid / 设备</th>
+            <th class="px-4 py-2.5 font-medium">IP</th>
+          </tr>
+        </thead>
+        <tbody id="recentRows" class="divide-y divide-slate-100"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="pb-6 text-center text-[11.5px] text-slate-400">
+    数据来自本站 SQLite（votes 表）。导出后可直接在 Excel/WPS 中按“70% 评审 + 30% 投票”折算。
+  </p>
+</main>
+
+<script>
+(() => {
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = (ms) => {
+    const d = new Date(ms);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  };
+
+  const el = {
+    sub: document.getElementById('sub'),
+    stats: document.getElementById('stats'),
+    notice: document.getElementById('notice'),
+    playerRows: document.getElementById('playerRows'),
+    suspects: document.getElementById('suspects'),
+    recentRows: document.getElementById('recentRows'),
+    recentCount: document.getElementById('recentCount'),
+    refresh: document.getElementById('refresh'),
+  };
+
+  function statCard(label, value, hint) {
+    return `<div class="rounded-2xl border border-slate-200 bg-white px-4 py-3.5">
+      <div class="text-[12px] text-slate-500">${label}</div>
+      <div class="num mt-1 text-2xl font-semibold text-brand">${value}</div>
+      ${hint ? `<div class="mt-0.5 text-[11.5px] text-slate-400">${hint}</div>` : ''}
+    </div>`;
+  }
+
+  function render(data) {
+    const o = data.overview || {};
+    el.sub.textContent = `${data.event?.org || ''} · ${data.event?.title || ''} · 截止 ${data.deadline?.label || ''}`;
+    el.stats.innerHTML = [
+      statCard('总票数', o.totalVotes ?? 0, '全部记录'),
+      statCard('参与人数', o.distinctVoters ?? 0, '去重投票人'),
+      statCard('近 24 小时', o.votes24h ?? 0, '滚动窗口'),
+      statCard('参赛选手', o.totalPlayers ?? 0, data.wxEnabled ? '微信 openid 模式可用' : '当前为 Cookie 模式'),
+    ].join('');
+
+    const closed = data.deadline?.closed;
+    el.notice.className = `rounded-xl border px-4 py-3 text-[13px] ${closed ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`;
+    el.notice.innerHTML = closed
+      ? '<b>投票已截止</b>：前台仅展示选手信息，接口也会拒绝新的投票。'
+      : `<b>投票进行中</b>：窗口模式 ${data.windowMode === 'rolling' ? '滚动 24 小时' : '自然日（北京时间 00:00 重置）'}；`
+        + `识别方式 ${data.wxEnabled ? '微信 openid（失败回退 Cookie）' : 'Cookie 设备标识（未配置公众号）'}。`;
+
+    el.playerRows.innerHTML = (data.players || []).map((p) => `
+      <tr class="hover:bg-slate-50/60">
+        <td class="px-4 py-2.5 num text-slate-500">${String(p.no).padStart(2, '0')}</td>
+        <td class="px-4 py-2.5">
+          <div class="flex items-center gap-3">
+            <img src="${esc(p.image || '')}" alt="" loading="lazy"
+                 class="h-10 w-14 shrink-0 rounded-md object-cover ring-1 ring-slate-200">
+            <div class="min-w-0">
+              <div class="truncate">${esc(p.name || '—')}</div>
+              <div class="text-[11.5px] text-slate-400">#${esc(p.id ?? '')}</div>
+            </div>
+          </div>
+        </td>
+        <td class="px-4 py-2.5 text-right num font-semibold text-slate-800">${p.votes}</td>
+        <td class="px-4 py-2.5 text-right num text-slate-500">${p.share}%</td>
+        <td class="px-4 py-2.5">
+          <div class="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            <div class="h-full rounded-full bg-brand/70" style="width:${Math.max(p.bar, p.votes ? 3 : 0)}%"></div>
+          </div>
+        </td>
+      </tr>`).join('');
+
+    const sus = data.suspicious || [];
+    el.suspects.innerHTML = sus.length
+      ? `<div class="flex flex-wrap gap-2">${sus.map((s) => `
+          <span class="rounded-lg bg-slate-100 px-2.5 py-1 text-[12px] text-slate-700 num">
+            ${esc(s.ip)} · ${s.n} 票 · ${s.voters} 个身份
+          </span>`).join('')}</div>`
+      : '暂无（阈值：同 IP ≥ 5 票）';
+
+    const rows = data.recent || [];
+    el.recentCount.textContent = `${rows.length} 条`;
+    el.recentRows.innerHTML = rows.map((v) => `
+      <tr class="hover:bg-slate-50/60">
+        <td class="px-4 py-2 num text-slate-400">${v.id}</td>
+        <td class="px-4 py-2 num text-slate-600">${esc(v.time)}</td>
+        <td class="px-4 py-2">${String(v.no).padStart(2, '0')} 号 <span class="text-slate-400">#${esc(v.playerId)}</span></td>
+        <td class="px-4 py-2">${v.type === 'wechat'
+          ? '<span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-700 ring-1 ring-emerald-100">微信</span>'
+          : '<span class="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 ring-1 ring-slate-200">Cookie</span>'}</td>
+        <td class="px-4 py-2 num text-slate-500">${esc(v.openid || v.voterKey)}</td>
+        <td class="px-4 py-2 num text-slate-500">${esc(v.ip || '—')}</td>
+      </tr>`).join('');
+  }
+
+  async function load() {
+    el.refresh.disabled = true;
+    try {
+      const res = await fetch('/admin/data.json', { headers: { accept: 'application/json' } });
+      if (res.status === 401) { location.href = '/admin/login'; return; }
+      const data = await res.json();
+      render(data);
+    } catch (e) {
+      el.sub.textContent = '加载失败，请刷新重试';
+    } finally {
+      el.refresh.disabled = false;
+    }
+  }
+
+  el.refresh.addEventListener('click', load);
+  load();
+  setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>

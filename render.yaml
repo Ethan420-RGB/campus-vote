@@ -1,0 +1,37 @@
+# Render 蓝图：一键部署（可用 Dashboard → New → Blueprint 直接识别本文件）
+services:
+  - type: web
+    name: campus-vote
+    runtime: node
+    plan: free
+    region: singapore          # 国内访问相对快；也可改 oregon / frankfurt
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 24.9.0
+      - key: NODE_ENV
+        value: production
+      # 部署后 Render 会给一个 https://xxx.onrender.com 域名，需手动填到这里
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: VOTE_DEADLINE
+        value: 2026-11-24T23:59:59+08:00
+      - key: VOTE_WINDOW_MODE
+        value: rolling
+      - key: IP_LIMIT_MAX
+        value: "80"
+      - key: SHOW_COUNTS
+        value: "false"
+
+      # ===== 微信公众号（可选，填了才启用 openid 模式）=====
+      - key: WX_APPID
+        sync: false
+      - key: WX_SECRET
+        sync: false

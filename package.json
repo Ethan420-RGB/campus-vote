@@ -1,0 +1,17 @@
+{
+  "name": "campus-vote",
+  "version": "1.0.0",
+  "private": true,
+  "description": "校园活动线上投票 H5（地球与空间科学学院 × 哲学学院）",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node --experimental-sqlite server.js",
+    "dev": "node --experimental-sqlite --watch server.js",
+    "seed:demo": "node --experimental-sqlite scripts/seed-demo.js",
+    "test": "node --experimental-sqlite scripts/smoke-test.js",
+    "make:img": "node scripts/make-placeholders.js"
+  }
+}
