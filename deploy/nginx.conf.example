@@ -1,0 +1,56 @@
+# 校园投票站点 Nginx 反向代理示例
+# 放到 /etc/nginx/conf.d/campus-vote.conf
+# 把 vote.example.edu.cn 换成你的域名；证书路径按学校实际路径修改
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name vote.example.edu.cn;
+    # 证书续期校验目录
+    location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    # nginx >= 1.25.1 用下面这行开启 HTTP/2；老版本改用 listen 443 ssl http2;
+    # http2 on;
+    server_name vote.example.edu.cn;
+
+    ssl_certificate     /etc/nginx/ssl/vote.example.edu.cn.pem;
+    ssl_certificate_key /etc/nginx/ssl/vote.example.edu.cn.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # 只允许上传小文件（本系统只接收 JSON）
+    client_max_body_size 2m;
+
+    # 微信域名校验文件、静态图片：Nginx 直接托管，减轻 Node 压力
+    location = /MP_verify_placeholder.txt { root /var/www/campus-vote/public; }
+    location /img/ {
+        alias /var/www/campus-vote/public/img/;
+        expires 7d;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
+    location / {
+        proxy_pass         http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+
+        # 这三行很关键：决定后台记录的 IP 是真实用户还是 127.0.0.1
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 10s;
+        proxy_read_timeout    60s;
+        proxy_buffering       off;   # 便于 SSE/长连接（本系统用不到，但更稳）
+    }
+
+    access_log /var/log/nginx/campus-vote.access.log;
+    error_log  /var/log/nginx/campus-vote.error.log;
+}

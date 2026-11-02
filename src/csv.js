@@ -1,4 +1,6 @@
 // CSV 生成（带 UTF-8 BOM，Excel/WPS 打开不乱码）
+import { beijingDateTime } from './config.js';
+
 export function toCsv(header, rows) {
   const esc = (v) => {
     const s = v === null || v === undefined ? '' : String(v);
@@ -10,13 +12,8 @@ export function toCsv(header, rows) {
 }
 
 export function formatTime(ms) {
-  // 统一按北京时间输出，便于评审与统计
-  const d = new Date(ms + 8 * 3600 * 1000);
-  const p = (n) => String(n).padStart(2, '0');
-  return (
-    `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ` +
-    `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`
-  );
+  // 统一按北京时间（Asia/Shanghai）输出，与服务器所在时区无关
+  return beijingDateTime(ms);
 }
 
 export function maskOpenId(openid) {

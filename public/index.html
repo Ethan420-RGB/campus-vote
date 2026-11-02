@@ -86,7 +86,7 @@
     <section class="mt-8 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
       <h2 class="font-serif text-lg text-brand">投票规则</h2>
       <ul class="mt-3 space-y-2 text-[13.5px] leading-relaxed text-slate-600">
-        <li>· 每位投票人 <b class="text-slate-800">24 小时内仅可投 1 票</b>，可投给任意一件作品，投出后不可更改。</li>
+        <li>· 每位投票人 <b class="text-slate-800">每个自然日（北京时间 0:00–24:00）仅可投 1 票</b>，可投给任意一件作品，投出后当日不可更改，次日 0 点后可再投。</li>
         <li>· 在“哲样青春”公众号内打开的页面会通过网页授权识别用户，更准确地做到“一人一天一票”。</li>
         <li>· 后台可追溯异常投票记录并作废处理，请勿使用脚本或刷票工具。</li>
         <li>· 线上投票于 <b class="text-slate-800" id="deadlineText">11 月 24 日 24:00</b> 关闭，之后页面仅展示作品信息。</li>
@@ -110,7 +110,7 @@
       <h3 class="font-serif text-lg text-slate-900">确认投票</h3>
       <p id="modalText" class="mt-2 text-[14px] leading-relaxed text-slate-600"></p>
       <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800 ring-1 ring-amber-100">
-        每人每天限投 1 票，投票后今日不可再投，也不可更改。
+        每人每天限投 1 票（北京时间 0 点重置），投票后今日不可再投，也不可更改。
       </p>
       <div class="mt-5 flex gap-3">
         <button data-close class="flex-1 rounded-xl border border-slate-300 py-2.5 text-[14px] font-medium text-slate-600 active:scale-[.99]">再想想</button>
@@ -181,7 +181,7 @@
 
       const disabled = state.closed || state.hasVoted;
       const btnLabel = state.closed ? '投票已截止' : state.hasVoted ? '今日已投票' : '投 票';
-      const hint = state.closed ? '展示中' : state.hasVoted ? '今日已投，明天再来' : '点击右侧按钮投票';
+      const hint = state.closed ? '展示中' : state.hasVoted ? '今日已完成投票，请明天再来' : '点击右侧按钮投票';
 
       card.innerHTML = `
         <div class="relative card-img">
@@ -253,11 +253,8 @@
       showBanner('warn', `<b>${esc(state.cfg.closedText)}</b>`);
       els.countdownBox.classList.add('hidden');
     } else if (state.hasVoted) {
-      const next = state.cfg.nextVoteAt ? new Date(state.cfg.nextVoteAt) : null;
-      const when = next && !Number.isNaN(next.getTime())
-        ? `（${next.getMonth() + 1} 月 ${next.getDate()} 日 ${String(next.getHours()).padStart(2, '0')}:${String(next.getMinutes()).padStart(2, '0')} 后可再投）`
-        : '';
-      showBanner('ok', `<b>今日已完成投票。</b>感谢参与！${esc(when)}`);
+      // 自然日规则：只提示“明天再来”，不展示任何“还剩 X 小时”的倒计时
+      showBanner('ok', '<b>今日已完成投票，请明天再来。</b>感谢参与！');
     } else if (state.cfg.identityType === 'cookie' && state.cfg.wxEnabled) {
       showBanner('info', '当前未在微信内打开，将以浏览器标识识别投票人；在微信中打开可获得更准确的“一人一天一票”校验。');
     }
@@ -292,8 +289,7 @@
 
       if (res.ok && data.ok) {
         state.hasVoted = true;
-        if (data.nextVoteAt) state.cfg.nextVoteAt = data.nextVoteAt;
-        toast('投票成功！今日已完成投票，明天可再次投票', 3200);
+        toast('投票成功！今日已完成投票，请明天再来', 3200);
         renderCards();
         applyState();
         return;
@@ -301,8 +297,7 @@
 
       if (data.code === 'ALREADY_VOTED') {
         state.hasVoted = true;
-        if (data.nextVoteAt) state.cfg.nextVoteAt = data.nextVoteAt;
-        toast('今日已完成投票，明天可再次投票', 3200);
+        toast('今日已完成投票，请明天再来', 3200);
         renderCards();
         applyState();
         return;

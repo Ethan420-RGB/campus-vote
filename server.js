@@ -2,9 +2,9 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { config } from './src/config.js';
+import { config, beijingDateKey, beijingDateTime, nextBeijingMidnight } from './src/config.js';
 import {
-  db, players, playerMap, lastVoteOf, addVote, countsByPlayer, overview,
+  db, getPlayers, getPlayerMap, lastVoteOf, voteOnDate, addVote, countsByPlayer, overview,
   votesFromIpSince, recentVotes, allVotesForCsv, suspiciousIps,
 } from './src/db.js';
 import { sign, verify, parseCookies, randomId, makeState, checkState, safeEqual } from './src/security.js';
@@ -136,21 +136,33 @@ function isAdmin(req) {
 }
 
 // ---------------------------------------------------------------- 投票窗口
-function nextAllowedAt(lastVote) {
-  if (!lastVote) return 0;
-  if (config.windowMode === 'calendar') {
-    const dayIndex = (t) => Math.floor((t + 8 * 3600 * 1000) / 86400000);
-    const today = dayIndex(Date.now());
-    if (dayIndex(lastVote.created_at) === today) return (today + 1) * 86400000 - 8 * 3600 * 1000;
-    return 0;
-  }
-  return lastVote.created_at + config.windowMs;
-}
+// 规则：北京时间自然日一天一票（00:00 重置）。
+// 判定：读取该 Cookie 用户当天（bj_date）是否有投票记录；有则拒绝，过了零点自然放行。
+const VOTE_LOCKED_MESSAGE = '今日已完成投票，请明天再来';
+const VOTE_SUCCESS_MESSAGE = '投票成功！今日已完成投票，请明天再来';
 
-function voteState(voterKey) {
-  const last = voterKey ? lastVoteOf(voterKey) : null;
-  const nextAt = nextAllowedAt(last);
-  return { hasVoted: Boolean(last) && nextAt > Date.now(), nextVoteAt: nextAt || null, lastVote: last };
+function voteState(voterKey, now = Date.now()) {
+  const bjDate = beijingDateKey(now);        // 服务器时区无关，强制按 Asia/Shanghai 算
+  const resetAt = nextBeijingMidnight(now);  // 下一个北京自然日 00:00
+
+  if (!voterKey) {
+    return { hasVoted: false, bjDate, resetAt, lastVote: null };
+  }
+
+  if (config.windowMode === 'calendar') {
+    const todayVote = voteOnDate(voterKey, bjDate);
+    return {
+      hasVoted: Boolean(todayVote),
+      bjDate,
+      resetAt: todayVote ? resetAt : 0,
+      lastVote: todayVote || lastVoteOf(voterKey),
+    };
+  }
+
+  // 兼容旧配置 VOTE_WINDOW_MODE=rolling（滚动 24 小时），默认不会走到这里
+  const last = lastVoteOf(voterKey);
+  const nextAt = last ? last.created_at + config.windowMs : 0;
+  return { hasVoted: Boolean(last) && nextAt > now, bjDate, resetAt: nextAt, lastVote: last };
 }
 
 // ---------------------------------------------------------------- 路由处理
@@ -176,7 +188,7 @@ function handleConfig(req, res) {
   }
 
   const state = voteState(session.voterKey);
-  const withVotes = config.showCounts ? countsByPlayer() : players;
+  const withVotes = config.showCounts ? countsByPlayer() : getPlayers();
   const payload = {
     event: config.event,
     deadline: { ms: config.deadlineMs, label: config.deadlineLabel, closed: Date.now() > config.deadlineMs },
@@ -184,7 +196,9 @@ function handleConfig(req, res) {
     windowMode: config.windowMode,
     identityType: session.identityType,
     hasVoted: state.hasVoted,
-    nextVoteAt: state.nextVoteAt,
+    // 只给"下一次可投的日期"，前端不展示倒计时
+    bjDate: state.bjDate,
+    resetAt: state.resetAt,
     showCounts: config.showCounts,
     players: withVotes,
     serverNow: Date.now(),
@@ -209,7 +223,7 @@ async function handleVote(req, res) {
     return sendJson(res, 400, { ok: false, code: 'BAD_REQUEST', message: '请求格式不正确' });
   }
 
-  const player = playerMap.get(String(body.playerId || ''));
+  const player = getPlayerMap().get(String(body.playerId || ''));
   if (!player) return sendJson(res, 404, { ok: false, code: 'NO_PLAYER', message: '选手不存在' });
 
   // 截止时间锁（服务端为准，改前端也没用）
@@ -252,9 +266,9 @@ async function handleVote(req, res) {
     const state = voteState(session.voterKey);
     if (state.hasVoted) {
       db.exec('ROLLBACK');
-      result = { ok: false, status: 409, code: 'ALREADY_VOTED', nextVoteAt: state.nextVoteAt };
+      result = { ok: false, status: 409, code: 'ALREADY_VOTED', bjDate: state.bjDate, resetAt: state.resetAt };
     } else {
-      const votedAt = addVote({
+      const saved = addVote({
         voterKey: session.voterKey,
         identityType: session.identityType,
         openid: session.openid,
@@ -263,7 +277,7 @@ async function handleVote(req, res) {
         ua,
       });
       db.exec('COMMIT');
-      result = { ok: true, status: 200, votedAt, nextVoteAt: nextAllowedAt({ created_at: votedAt }) };
+      result = { ok: true, status: 200, ...saved };
     }
   } catch (err) {
     try { db.exec('ROLLBACK'); } catch { /* ignore */ }
@@ -275,16 +289,20 @@ async function handleVote(req, res) {
     return sendJson(res, result.status, {
       ok: false,
       code: result.code,
-      message: '今日已完成投票，明天可再次投票',
-      nextVoteAt: result.nextVoteAt,
+      message: VOTE_LOCKED_MESSAGE,
+      bjDate: result.bjDate,
+      resetAt: result.resetAt,
     });
   }
 
   const payload = {
     ok: true,
-    message: '投票成功！今日已完成投票，明天可再次投票',
-    votedAt: result.votedAt,
-    nextVoteAt: result.nextVoteAt,
+    message: VOTE_SUCCESS_MESSAGE,
+    votedAt: result.createdAt,
+    // 落库的完整北京时间，便于用户/管理员核对
+    bjDate: result.bjDate,
+    bjTime: result.bjTime,
+    resetAt: nextBeijingMidnight(result.createdAt),
     playerNo: player.no,
   };
   const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' };
@@ -416,7 +434,8 @@ function adminData() {
     })),
     recent: recentVotes(200).map((v) => ({
       id: v.id,
-      time: formatTime(v.created_at),
+      time: v.bj_time || formatTime(v.created_at),
+      date: v.bj_date || beijingDateKey(v.created_at),
       no: v.player_no,
       playerId: v.player_id,
       type: v.identity_type,
@@ -437,9 +456,10 @@ function handleAdminExport(res, url) {
   if (type === 'votes') {
     const rows = allVotesForCsv().map((v) => [
       v.id,
-      formatTime(v.created_at),
+      v.bj_time || formatTime(v.created_at),
+      v.bj_date || beijingDateKey(v.created_at),
       v.player_no,
-      playerMap.get(v.player_id)?.name || '',
+      getPlayerMap().get(v.player_id)?.name || '',
       v.player_id,
       v.identity_type === 'wechat' ? '微信 openid' : 'Cookie 设备',
       v.openid || '',
@@ -447,14 +467,17 @@ function handleAdminExport(res, url) {
       v.ip || '',
       v.ua || '',
     ]);
-    csv = toCsv(['记录ID', '投票时间(北京时间)', '选手序号', '选手姓名', '选手ID', '身份类型', 'openid', '身份标识', 'IP', 'User-Agent'], rows);
-    filename = `投票明细_${new Date().toISOString().slice(0, 10)}.csv`;
+    csv = toCsv(
+      ['记录ID', '投票时间(北京时间)', '投票日期(北京时间)', '选手序号', '选手姓名', '选手ID', '身份类型', 'openid', '身份标识', 'IP', 'User-Agent'],
+      rows
+    );
+    filename = `投票明细_${beijingDateKey()}.csv`;
   } else {
     const rows = countsByPlayer().map((p) => [p.no, p.name || '', p.id, p.votes]);
     const total = rows.reduce((s, r) => s + Number(r[3]), 0);
     rows.push(['', '合计', '', total]);
     csv = toCsv(['序号', '姓名', '选手ID', '票数'], rows);
-    filename = `选手票数_${new Date().toISOString().slice(0, 10)}.csv`;
+    filename = `选手票数_${beijingDateKey()}.csv`;
   }
   res.writeHead(200, {
     'content-type': 'text/csv; charset=utf-8',
@@ -514,7 +537,8 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         identityType: s?.identityType || null,
         hasVoted: st.hasVoted,
-        nextVoteAt: st.nextVoteAt,
+        bjDate: st.bjDate,
+        resetAt: st.resetAt,
         closed: Date.now() > config.deadlineMs,
         serverNow: Date.now(),
       });
@@ -549,11 +573,21 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(config.port, () => {
   const mode = config.wx.enabled ? '微信 openid + 无法授权时回退 Cookie' : 'Cookie（未配置公众号）';
+  const windowText = config.windowMode === 'calendar'
+    ? `北京时间自然日一天一票（${config.timeZone}，每天 00:00 重置）`
+    : '滚动 24 小时（兼容旧配置，不建议）';
   console.log(`\n  校园投票已启动：http://localhost:${config.port}`);
   console.log(`  识别方式：${mode}`);
-  console.log(`  投票窗口：${config.windowMode === 'rolling' ? '滚动 24 小时' : '自然日（北京时间）'}`);
+  console.log(`  投票限制：${windowText}`);
+  console.log(`  当前北京日期：${beijingDateKey()}　下一次解锁：${beijingDateTime(nextBeijingMidnight())}`);
   console.log(`  截止时间：${new Date(config.deadlineMs).toISOString()}（${config.deadlineLabel}）${config.deadlineAuto ? `  ← 未设置 VOTE_DEADLINE，按最近的 ${config.deadlineLabel} 自动计算` : ''}`);
-  console.log(`  参赛选手：${players.length} 位　　数据库：${config.dbPath}`);
+  console.log(`  参赛选手：${getPlayers().length} 位　　数据库：${config.dbPath}`);
+  if (config.windowMode === 'rolling') {
+    console.log('  ⚠ 检测到 VOTE_WINDOW_MODE=rolling：当前仍是旧的“滚动 24 小时”，要启用自然日请删除该环境变量');
+  }
+  if (config.wx.enabled) {
+    console.log('  ⚠ 检测到 WX_APPID/WX_SECRET：当前启用微信 openid 识别；若要纯 Cookie 识别，请清空这两项');
+  }
   if (config.adminPassword === 'admin1234') {
     console.log('  ⚠ 正在使用默认后台密码 admin1234，上线前请设置 ADMIN_PASSWORD\n');
   }

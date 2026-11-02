@@ -1,0 +1,29 @@
+[Unit]
+Description=Campus Vote H5 (Node.js)
+Documentation=file:///var/www/campus-vote/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vote
+Group=vote
+WorkingDirectory=/var/www/campus-vote
+EnvironmentFile=/etc/campus-vote.env
+# Node 22.x 需要该参数；Node 24 上同样兼容
+ExecStart=/usr/bin/node --experimental-sqlite server.js
+Restart=always
+RestartSec=3
+# 优雅退出：server.js 监听 SIGTERM 并关闭 SQLite
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# 基础加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/www/campus-vote/data
+
+[Install]
+WantedBy=multi-user.target

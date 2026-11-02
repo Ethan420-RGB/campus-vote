@@ -147,7 +147,7 @@
     el.notice.className = `rounded-xl border px-4 py-3 text-[13px] ${closed ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`;
     el.notice.innerHTML = closed
       ? '<b>投票已截止</b>：前台仅展示选手信息，接口也会拒绝新的投票。'
-      : `<b>投票进行中</b>：窗口模式 ${data.windowMode === 'rolling' ? '滚动 24 小时' : '自然日（北京时间 00:00 重置）'}；`
+      : `<b>投票进行中</b>：限制 ${data.windowMode === 'rolling' ? '滚动 24 小时' : '北京时间自然日一天一票（每天 00:00 重置）'}；`
         + `识别方式 ${data.wxEnabled ? '微信 openid（失败回退 Cookie）' : 'Cookie 设备标识（未配置公众号）'}。`;
 
     el.playerRows.innerHTML = (data.players || []).map((p) => `

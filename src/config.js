@@ -40,6 +40,45 @@ function env(name, fallback = '') {
   return v === undefined || v === '' ? fallback : v;
 }
 
+// ---------------------------------------------------------------- 北京时间工具
+// 强制使用 Asia/Shanghai：所有"自然日"判断都走这里，避免服务器时区（UTC）造成
+// 提前/延后解锁。北京时间自 1991 年起无夏令时，恒为 UTC+8。
+export const TIME_ZONE = 'Asia/Shanghai';
+export const TZ_OFFSET = '+08:00';
+
+const dateFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+});
+const clockFmt = new Intl.DateTimeFormat('en-GB', {
+  timeZone: TIME_ZONE, hourCycle: 'h23',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+});
+
+/** 北京时间自然日键：'YYYY-MM-DD'（如 2026-11-24） */
+export function beijingDateKey(ts = Date.now()) {
+  return dateFmt.format(new Date(ts));
+}
+
+/** 北京时间时刻：'HH:mm:ss' */
+export function beijingClock(ts = Date.now()) {
+  return clockFmt.format(new Date(ts));
+}
+
+/** 完整北京时间：'YYYY-MM-DD HH:mm:ss' */
+export function beijingDateTime(ts = Date.now()) {
+  return `${beijingDateKey(ts)} ${beijingClock(ts)}`;
+}
+
+/** 该时刻所属北京自然日的 00:00:00（毫秒时间戳） */
+export function beijingDayStart(ts = Date.now()) {
+  return Date.parse(`${beijingDateKey(ts)}T00:00:00${TZ_OFFSET}`);
+}
+
+/** 下一个北京自然日 00:00:00（毫秒时间戳） */
+export function nextBeijingMidnight(ts = Date.now()) {
+  return beijingDayStart(ts) + 24 * 3600 * 1000;
+}
+
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
@@ -87,7 +126,9 @@ if (Number.isNaN(deadlineMs)) {
   throw new Error(`VOTE_DEADLINE 无法解析：${deadlineRaw}（示例：2026-11-24T23:59:59+08:00）`);
 }
 
-const windowMode = env('VOTE_WINDOW_MODE', 'rolling').toLowerCase() === 'calendar' ? 'calendar' : 'rolling';
+// 投票限制：默认【北京时间自然日一天一票】。
+// 兼容旧配置：显式设置 VOTE_WINDOW_MODE=rolling 才回到“滚动 24 小时”（不建议）。
+const windowMode = env('VOTE_WINDOW_MODE', 'calendar').toLowerCase() === 'rolling' ? 'rolling' : 'calendar';
 
 export const config = {
   port,
@@ -107,9 +148,11 @@ export const config = {
   deadlineLabel: env('VOTE_DEADLINE_LABEL', DEADLINE_LABEL),
   closedText: env('VOTE_CLOSED_TEXT', `投票已于 ${DEADLINE_LABEL} 截止，现仅展示作品信息`),
 
-  // 投票窗口：rolling = 距上次投票满 24 小时；calendar = 自然日（北京时间 00:00 重置）
+  // 投票窗口：calendar = 北京时间自然日（默认，每天 00:00 重置）；
+  //           rolling  = 旧版“滚动 24 小时”，仅为兼容保留，不建议再使用
   windowMode,
   windowMs: 24 * 60 * 60 * 1000,
+  timeZone: TIME_ZONE,
 
   sessionSecret: resolveSessionSecret(),
   cookieName: 'cv_sid',

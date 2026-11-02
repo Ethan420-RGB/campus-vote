@@ -14,9 +14,9 @@
 | --- | --- |
 | 首页选手卡片：序号 / 图片 / 200 字阐述 / 投票按钮 | `public/index.html`，响应式 1/2/3 列；阐述超 5 行自动出现“展开全文” |
 | 点击投票弹确认框 | 自制模态框，含“不可更改”提示 |
-| 每人每天 1 票（对任意选手都算） | 服务端按身份键 + 时间窗口判定，前端按钮同步置灰 |
-| 投票成功提示“今日已完成投票，明天可再次投票” | 成功 Toast + 顶部状态条 + 显示下次可投时间 |
-| 记录 IP 用于防刷 | `votes` 表记录 `ip`、`ua`、身份类型、时间 |
+| 每人每天 1 票（对任意选手都算） | 按**北京自然日**判定（`bj_date` 字段），同一 Cookie 当天最多 1 票，次日 00:00 自动解锁 |
+| 投票成功的提示 | Toast + 顶部状态条：<br>“投票成功！今日已完成投票，请明天再来”（**不显示剩余小时倒计时**） |
+| 记录 IP 用于防刷 | `votes` 表记录 `ip`、`ua`、身份类型、`created_at`、`bj_time`（完整北京时间） |
 | 后台面板（独立路由 + 密码） | `/admin`，密码来自 `ADMIN_PASSWORD`，8 小时会话 |
 | 查看票数 / 导出 CSV | `/admin/data.json`、`/admin/export.csv`、`/admin/export.csv?type=votes` |
 | 11 月 24 日 24:00 截止锁 | 服务端强制校验（改前端无效），前端倒计时并置灰 |
@@ -56,10 +56,19 @@ campus-vote/
 ├── data/
 │   ├── players.json          # 选手名单（序号/姓名/图片/阐述）
 │   └── votes.db              # SQLite 数据库（运行时生成）
+├── docs/
+│   ├── OPERATIONS.md         # ⭐ 操作手册：改内容 → 自检 → 收尾 → 折算（SOP）
+│   └── preview-*.png         # 界面截图（README 里引用）
 ├── scripts/
 │   ├── make-placeholders.js  # 生成示例图
 │   ├── seed-demo.js          # 造演示数据（后台预览用）
 │   └── smoke-test.js         # 冒烟测试（自起两个实例，覆盖 20+ 项）
+├── deploy/                   # 学校/云服务器部署（可选）
+│   ├── DEPLOY-SERVER.md      # 部署手册 + 权限申请清单
+│   ├── REQUEST-TEMPLATE.md   # 给团委/信息中心/公众号管理员的申请模板
+│   ├── nginx.conf.example    # Nginx 反代 + HTTPS 示例
+│   ├── campus-vote.service   # systemd 守护配置
+│   └── ecosystem.config.cjs  # pm2 配置
 ├── render.yaml               # Render 一键部署蓝图
 ├── .env.example              # 环境变量清单
 └── README.md
@@ -103,7 +112,7 @@ node scripts/smoke-test.js
 | `PUBLIC_BASE_URL` | `http://localhost:8787` | 对外地址，微信授权回调要用，必须是 https 正式域名 |
 | `VOTE_DEADLINE` | 自动：最近的 11-24 23:59:59 (+08:00) | 截止时间，建议正式活动写死，如 `2026-11-24T23:59:59+08:00` |
 | `VOTE_DEADLINE_LABEL` | `11 月 24 日 24:00` | 前端展示用的文字 |
-| `VOTE_WINDOW_MODE` | `rolling` | `rolling`＝距上次投票满 24h；`calendar`＝自然日（北京时间 0 点重置） |
+| `VOTE_WINDOW_MODE` | `calendar` | `calendar`＝**北京时间自然日一天一票**（默认，00:00 重置）；`rolling`＝旧版滚动 24h（仅兼容保留） |
 | `ADMIN_PASSWORD` | `admin1234` | 后台密码，务必修改 |
 | `SESSION_SECRET` | 自动生成并存到 `data/.session-secret` | Cookie 签名密钥 |
 | `DB_PATH` | `./data/votes.db` | SQLite 路径（挂载磁盘时改这里） |
@@ -113,16 +122,24 @@ node scripts/smoke-test.js
 | `SHOW_COUNTS` | `false` | 公开页是否显示实时票数 |
 | `EVENT_TITLE` / `EVENT_SUBTITLE` / `EVENT_ORG` / `EVENT_ORG2` | 见 `.env.example` | 活动标题、主办/协办文案 |
 
-**关于“24 小时”还是“当天”**：规则写的是“24 小时内只能投 1 票”，公告文案又写“明天可再投”。
+**投票限制规则（已改为自然日）**
 
-- `rolling`（默认）严格满足“24 小时内 1 票”，跨零点也不能连投两票，最防刷；
-- `calendar` 在每天 0 点重置，更贴近“今天投过了，明天还能投”的说法，但存在“23:59 投一次 + 00:01 再投”的口子。
+- 现行规则：**北京时间自然日一天一票**（0:00–24:00 为一天，次日 0 点自动解锁）。
+  判定依据是 `votes.bj_date`（`YYYY-MM-DD`，Asia/Shanghai），与服务器所在时区无关。
+- 兼容开关：只有在环境变量里显式写 `VOTE_WINDOW_MODE=rolling` 才会回到旧的“滚动 24 小时”。
+  **如果是从旧版本升级，请删掉 `.env` / Render 里的 `VOTE_WINDOW_MODE` 这一行**（不删的话仍是旧行为，启动日志会打印警告）。
+- 取舍说明：自然日规则下，23:59 投一票、00:01 再投一票在规则上是允许的（跨了两个自然日）；
+  这是“每天一票”的固有含义，配合 Cookie + IP 记录已足够，不必再用滚动窗口。
 
-两者都实现好了，改一个环境变量即可切换。建议：**校内评选用 rolling**。
+两者都实现好了，改一个环境变量即可切换。**默认就是 `calendar`（自然日），无需配置**。
 
 ---
 
 ## 5. 部署到 Render（免费档，分步）
+
+> 另一种做法是部署到学校/云服务器（支持 openid、数据可持久），手册在
+> **[deploy/DEPLOY-SERVER.md](deploy/DEPLOY-SERVER.md)**，配套的 Nginx / systemd / pm2 配置样例也在 `deploy/` 目录；
+> 需要向学院、信息中心、公众号管理员申请什么，见 **[deploy/REQUEST-TEMPLATE.md](deploy/REQUEST-TEMPLATE.md)**（三封可直接改用的申请模板）。
 
 ### 5.1 推到 GitHub
 
@@ -216,7 +233,7 @@ PUBLIC_BASE_URL=https://vote.example.com
 2. 服务端发现没有会话 → 302 到 `https://open.weixin.qq.com/connect/oauth2/authorize?...scope=snsapi_base`
 3. 微信**静默**回调 `/wx/callback?code=...&state=...`（不弹授权框）
 4. 服务端用 `code` 换 `openid`，写入签名 Cookie（HttpOnly + Secure + SameSite=Lax），302 回首页
-5. 用户点投票 → 以 `wx:<openid>` 作为唯一身份判定“24 小时 1 票”
+5. 用户点投票 → 以 `wx:<openid>` 作为唯一身份判定“每个北京自然日 1 票”
 
 `state` 用 HMAC 签名并带 10 分钟有效期，防伪造回调；`code` 只能换一次 openid，无法复用。
 
@@ -271,7 +288,7 @@ PUBLIC_BASE_URL=https://vote.example.com
 ### 8.2 本项目的策略
 
 1. **身份判定**：优先 openid → 否则 Cookie。IP **只记录、不判重**，仅用于事后人工核查。
-2. **时间窗口**：同一身份 24 小时内只能投 1 票（`rolling`），或按自然日（`calendar`）。
+2. **时间窗口**：同一身份每个北京自然日只能投 1 票（`calendar`，默认），0 点自动解锁。
 3. **原子写入**：`BEGIN IMMEDIATE` 事务内完成“查重 + 写入”，双击/并发也只会成功一次。
 4. **软限流**：同一 IP 每 10 分钟超过 `IP_LIMIT_MAX`（默认 80）票返回 429 —— 阈值故意留得很大，正常校园网白天也不会触发，但对脚本洪水有效。
 5. **防篡改**：Cookie 用 HMAC-SHA256 签名，改 ID 会被识别；后台密码恒时比较 + 登录失败限速（10 分钟 8 次）。
@@ -331,6 +348,9 @@ PUBLIC_BASE_URL=https://vote.example.com
 
 选手数据全部在 `data/players.json`，图片放在 `public/img/`（用 Git 管理，重新部署也不会丢）。
 
+> 本章是"怎么改"，**完整流程（准备素材 → 改内容 → 发布自检 → 活动中巡检 → 截止 → 折算 → 归档）**见
+> **[docs/OPERATIONS.md](docs/OPERATIONS.md)**，可以直接打印给负责的同学照着做。
+
 ### 10.1 三步操作
 
 **第 1 步：把图片放进 `public/img/`**
@@ -378,8 +398,9 @@ public/img/
 
 **第 3 步：生效**
 
-- 本地：重启 `npm start`（或 `npm run dev`，改完自动重启）
-- 线上：`git add . && git commit -m "add works" && git push`，Render 会自动重新部署（约 1–2 分钟）
+- **学校服务器 / 本机**：直接保存 `players.json` → **刷新页面就生效**（热加载，不用重启进程，更不用重新部署）
+- **Render 免费版**：容器里的文件不能持久修改，要 `git add . && git commit -m "update works" && git push`，等自动重新部署（1–2 分钟）
+- 只想换图片、不改文字：把文件覆盖到 `public/img/` 后强刷页面（Ctrl+F5）即可
 
 > 图片是**构建产物的一部分**，所以必须随 Git 一起提交；只在本地 `public/img/` 放图片、不 push，线上就看不到。
 
@@ -391,13 +412,28 @@ public/img/
 - [ ] 后台「选手票数」表格里能看到缩略图，说明路径没错
 - [ ] 手机 4G 下打开，首屏 3 秒内能看到内容
 
-### 10.3 常见错误
+### 10.3 改内容需要重新部署吗？
+
+**不需要重启，更不需要重新部署**（本项目的 `players.json` 是热加载的）：
+
+| 你要改的东西 | 服务器上（学校服务器 / 云主机） | Render 免费版 |
+| --- | --- | --- |
+| `data/players.json`（名字、阐述、序号、图片路径） | 保存文件 → **刷新页面即生效**，不用重启进程 | 因为容器里不能持久编辑，必须 `git push` 触发重新部署（1–2 分钟） |
+| `public/img/` 里的图片 | 覆盖文件 → 刷新即生效（Nginx/浏览器有缓存，强刷 Ctrl+F5） | 同样要 `git push` |
+| 新增 / 删除作品 | 改 JSON 即可，新增立即出现 | 同上要 push |
+| 投票规则、截止时间、密码 | 改 `/etc/campus-vote.env` → `systemctl restart campus-vote` | 改 Render 环境变量 → 自动重新部署 |
+
+> 热加载的安全网：如果 JSON 改出语法错误，服务端会打印 `[players] players.json 解析失败，继续使用上一版`，**线上继续用上一版内容**，不会白屏。改完记得看一眼终端日志。
+
+> ⚠️ 删除作品不会删除历史投票记录，但「选手票数」表只统计当前名单里的作品。所以：**尽量只改内容、不要删 `id`**；确需删除请先导出 CSV。
+
+### 10.4 常见错误
 
 | 现象 | 原因 | 解决 |
 | --- | --- | --- |
 | 图片显示空白/裂图 | `image` 路径写错（大小写、少了 `/img/`） | 浏览器直接访问 `http://localhost:8787/img/work-01.jpg` 验证 |
 | 图片被裁掉一半 | 原图不是 4:3 | 用 4:3 横图，或改卡片比例（`aspect-[4/3]`） |
-| 改完没变化 | 只改了本地没重启/没 push | 本地重启；线上 push 后等部署完成并强制刷新（Ctrl+F5） |
+| 改完没变化 | 浏览器缓存 / Render 还没部署完 | 强刷 Ctrl+F5；Render 上等状态变 Live 再刷新 |
 | 页面显示“加载失败” | 直接双击打开了 `index.html` | 必须 `npm start` 后访问 `http://localhost:8787` |
 
 ---
